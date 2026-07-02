@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: arteimpreso
+      POSTGRES_PASSWORD: arteimpreso
+      POSTGRES_DB: arteimpreso
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arteimpreso -d arteimpreso"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://arteimpreso:arteimpreso@postgres:5432/arteimpreso
+      JWT_SECRET: dev-secret-change-in-production
+      PORT: 3001
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      CLIENT_URL: http://localhost:5173
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5173:80"
+    environment:
+      VITE_API_URL: http://localhost:3001/api
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
+  uploads_data:

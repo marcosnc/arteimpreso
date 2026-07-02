@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+npx prisma migrate deploy
+npx tsx prisma/seed.ts 2>/dev/null || true
+exec "$@"

@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  BUYER
+  ARTIST
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  IN_PRODUCTION
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum ProviderIntegrationType {
+  API
+  MANUAL
+}
+
+enum FulfillmentTaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(BUYER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  artistProfile ArtistProfile?
+  cart          Cart?
+  orders        Order[]
+  addresses     Address[]
+}
+
+model ArtistProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio         String?
+  displayName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  artworks Artwork[]
+  payouts  ArtistPayout[]
+}
+
+model Artwork {
+  id              String   @id @default(cuid())
+  artistId        String
+  artist          ArtistProfile @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  imageUrl        String
+  isPublished     Boolean  @default(true)
+  printLimit      Int?     // null = unlimited
+  printsSold      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  formatPrices ArtworkFormatPrice[]
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+}
+
+model PrintFormat {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g. "A4", "50x70cm"
+  widthCm     Float
+  heightCm    Float
+  baseCostCents Int    // cost from provider baseline
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  artworkPrices ArtworkFormatPrice[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+}
+
+model ArtworkFormatPrice {
+  id          String      @id @default(cuid())
+  artworkId   String
+  artwork     Artwork     @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  formatId    String
+  format      PrintFormat @relation(fields: [formatId], references: [id], onDelete: Cascade)
+  priceCents  Int
+  isAvailable Boolean     @default(true)
+
+  @@unique([artworkId, formatId])
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String      @id @default(cuid())
+  cartId    String
+  cart      Cart        @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  artworkId String
+  artwork   Artwork     @relation(fields: [artworkId], references: [id])
+  formatId  String
+  format    PrintFormat @relation(fields: [formatId], references: [id])
+  quantity  Int         @default(1)
+
+  @@unique([cartId, artworkId, formatId])
+}
+
+model Address {
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String?
+  street     String
+  city       String
+  state      String?
+  postalCode String
+  country    String  @default("AR")
+  isDefault  Boolean @default(false)
+
+  orders Order[]
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+  addressId       String
+  address         Address     @relation(fields: [addressId], references: [id])
+  status          OrderStatus @default(PENDING_PAYMENT)
+  subtotalCents   Int
+  shippingCents   Int         @default(0)
+  totalCents      Int
+  platformFeePct  Float       @default(15) // commission %
+  trackingCode    String?
+  trackingUrl     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items       OrderItem[]
+  payment     Payment?
+  fulfillment Fulfillment?
+  payouts     ArtistPayout[]
+}
+
+model OrderItem {
+  id             String      @id @default(cuid())
+  orderId        String
+  order          Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  artworkId      String
+  artwork        Artwork     @relation(fields: [artworkId], references: [id])
+  formatId       String
+  format         PrintFormat @relation(fields: [formatId], references: [id])
+  quantity       Int
+  unitPriceCents Int
+  artistId       String
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String        @unique
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status          PaymentStatus @default(PENDING)
+  amountCents     Int
+  stripePaymentId String?
+  paidAt          DateTime?
+  createdAt       DateTime      @default(now())
+}
+
+model PrintProvider {
+  id              String                  @id @default(cuid())
+  name            String
+  integrationType ProviderIntegrationType @default(MANUAL)
+  apiBaseUrl      String?
+  apiKeyEncrypted String?
+  isActive        Boolean                 @default(true)
+  priority        Int                     @default(0) // higher = preferred
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  fulfillments Fulfillment[]
+}
+
+model Fulfillment {
+  id               String        @id @default(cuid())
+  orderId          String        @unique
+  order            Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  providerId       String
+  provider         PrintProvider @relation(fields: [providerId], references: [id])
+  externalOrderId  String?
+  submittedAt      DateTime?
+  shippedAt        DateTime?
+  deliveredAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  tasks FulfillmentTask[]
+}
+
+model FulfillmentTask {
+  id            String                @id @default(cuid())
+  fulfillmentId String
+  fulfillment   Fulfillment           @relation(fields: [fulfillmentId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  status        FulfillmentTaskStatus @default(PENDING)
+  assignedTo    String?
+  completedAt   DateTime?
+  createdAt     DateTime              @default(now())
+}
+
+model ArtistPayout {
+  id          String       @id @default(cuid())
+  artistId    String
+  artist      ArtistProfile @relation(fields: [artistId], references: [id])
+  orderId     String
+  order       Order        @relation(fields: [orderId], references: [id])
+  amountCents Int
+  status      PayoutStatus @default(PENDING)
+  paidAt      DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@unique([artistId, orderId])
+}
