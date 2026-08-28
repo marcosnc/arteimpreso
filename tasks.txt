@@ -1,0 +1,6 @@
+- Mantener el FE en https://arteimpreso.onrender.com/
+- Deployar el BE y la DB en Coolify
+  - Crear un Docker Compose que sólo tenga el BE y la DB
+  - Crear el docker en github
+  - Configurar Cors
+  - Deployar ese github en Coolify
