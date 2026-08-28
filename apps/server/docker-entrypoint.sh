@@ -1,5 +1,7 @@
 #!/bin/sh
 set -e
 npx prisma migrate deploy
-npx tsx prisma/seed.ts 2>/dev/null || true
+if [ "${SEED_DB}" = "true" ]; then
+  npx tsx prisma/seed.ts
+fi
 exec "$@"

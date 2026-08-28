@@ -1,0 +1,56 @@
+# Postgres + API para producción (Coolify).
+# La imagen del server se publica en GitHub Actions → ghcr.io/marcosnc/arteimpreso-server
+# El frontend corre por separado; configurar CLIENT_URL con su URL pública.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-arteimpreso}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definir POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-arteimpreso}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-arteimpreso} -d ${POSTGRES_DB:-arteimpreso}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  server:
+    image: ${SERVER_IMAGE:-ghcr.io/marcosnc/arteimpreso-server:latest}
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3001}:3001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-arteimpreso}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-arteimpreso}
+      JWT_SECRET: ${JWT_SECRET:?Definir JWT_SECRET}
+      PORT: 3001
+      CLIENT_URL: ${CLIENT_URL:?Definir CLIENT_URL con la URL del frontend}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      SEED_DB: ${SEED_DB:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+  uploads_data:
